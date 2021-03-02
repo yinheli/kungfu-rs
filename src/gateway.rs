@@ -53,18 +53,21 @@ impl Gateway {
     }
 
     async fn serve(&self) {
-        let name = format!("kungfu_{}", self.id);
         let mut config = Configuration::default();
         config
             .layer(tun::Layer::L3)
             .address(self.net.addr())
             .netmask(self.net.netmask())
             .mtu(MTU as i32)
-            .name(name.clone())
             .up();
 
+        #[cfg(target_os = "linux")]
+        {
+            config.name(format!("kungfu_{}", self.id));
+        }
+
         let dev = tun::create_as_async(&config).expect("create tun failed");
-        debug!("setup tun: {}", name);
+        debug!("setup tun id {}", self.id);
 
         self.apply_rules();
 
@@ -87,7 +90,7 @@ impl Gateway {
                     }
                 }
                 Err(err) => {
-                    error!("read dev ({}) packet error: {}", name, err);
+                    error!("read dev ({}) packet error: {}", self.id, err);
                 }
             }
         }
