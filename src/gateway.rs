@@ -81,7 +81,7 @@ impl Gateway {
             use std::time::Duration;
             sleep(Duration::from_millis(100));
             let net = format!("{}/{}", self.net.network(), self.net.prefix_len());
-            debug!("add net route {}", net);
+            debug!("for macOS manual add net route {}", net);
             let _ = Command::new("route")
                 .args(&[
                     "-n",
