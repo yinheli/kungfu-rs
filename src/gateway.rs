@@ -58,6 +58,7 @@ impl Gateway {
             .layer(tun::Layer::L3)
             .address(self.net.addr())
             .netmask(self.net.netmask())
+            .destination(self.net.addr())
             .mtu(MTU as i32)
             .up();
 
@@ -66,8 +67,32 @@ impl Gateway {
             config.name(format!("kungfu_{}", self.id));
         }
 
+        #[cfg(target_os = "macos")]
+        {
+            config.name(format!("utun{}", self.id + 5));
+        }
+
         let dev = tun::create_as_async(&config).expect("create tun failed");
         debug!("setup tun id {}", self.id);
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::thread::sleep;
+            use std::time::Duration;
+            sleep(Duration::from_millis(100));
+            let net = format!("{}/{}", self.net.network(), self.net.prefix_len());
+            debug!("add net route {}", net);
+            let _ = Command::new("route")
+                .args(&[
+                    "-n",
+                    "-q",
+                    "add",
+                    "-net",
+                    &net,
+                    &self.net.addr().to_string(),
+                ])
+                .output();
+        }
 
         self.apply_rules();
 
@@ -110,14 +135,14 @@ impl Gateway {
                     {
                         let _ = Command::new("ip")
                             .args(&["route", "add", v, "via", &self.net.addr().to_string()])
-                            .status();
+                            .output();
                     }
 
                     #[cfg(target_os = "macos")]
                     {
                         let _ = Command::new("route")
-                            .args(&["-n", "add", "-net", v, &self.net.addr().to_string()])
-                            .status();
+                            .args(&["-n", "-q", "add", "-net", v, &self.net.addr().to_string()])
+                            .output();
                     }
                 }
             }
@@ -192,5 +217,19 @@ impl Gateway {
 
             let _ = stream.send(TunPacket::new(packet.packet().to_vec())).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ipnet::Ipv4Net;
+
+    #[test]
+    fn test_ipv4() {
+        let net: Ipv4Net = "10.86.0.1/16".parse().unwrap();
+        println!("{}/{}", net.network(), net.prefix_len());
+        // println!("{}", net.);
+        // let net = format!("{}", net);
+        // println!("{}", net);
     }
 }
