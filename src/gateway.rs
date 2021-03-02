@@ -4,8 +4,7 @@ use std::{
     time::Instant,
 };
 
-use futures::future::join_all;
-use futures::{SinkExt, StreamExt};
+use futures::{future::join_all, SinkExt, StreamExt};
 use icmp::destination_unreachable::IcmpCodes;
 use ipnet::Ipv4Net;
 use pnet::packet::{
@@ -54,14 +53,14 @@ impl Gateway {
     }
 
     async fn serve(&self) {
-        let mut config = Configuration::default();
         let name = format!("kungfu_{}", self.id);
+        let mut config = Configuration::default();
         config
+            .layer(tun::Layer::L3)
             .address(self.net.addr())
             .netmask(self.net.netmask())
             .mtu(MTU as i32)
             .name(name.clone())
-            .layer(tun::Layer::L3)
             .up();
 
         let dev = tun::create_as_async(&config).expect("create tun failed");
