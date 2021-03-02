@@ -80,10 +80,10 @@ fn serve(matches: &clap::ArgMatches) {
     let mut rt = tokio::runtime::Builder::new()
         .threaded_scheduler()
         .enable_all()
-        .max_threads(cpu * 4)
-        .core_threads(2)
+        .max_threads(cpu * 8)
+        .core_threads(cpu)
         .thread_name("kungfu-worker")
-        .thread_stack_size(1024 * 256)
+        .thread_stack_size(1024 * 512)
         .build()
         .expect("tokio build failed");
 
