@@ -1,0 +1,82 @@
+# TODO
+# 通过 etcd 读取配置
+# 当 通过 etcd 读取配置时，仅 network 可以使用本地配置
+# etcd: http://etcd.server.com/kungfu
+
+# TODO
+# 通过 http get 请求读取配置
+# 当 通过 http 读取配置时，仅 network 可以使用本地配置
+# http: http://etcd.server.com/kungfu
+
+dns_port: 5353
+dns_ttl: 10
+# 上游 dns
+dns_upstream:
+  - 1.2.4.8
+  - 114.114.114.114
+# DNS fallback，当上游 DNS 失败或超时时，使用 fallback
+dns_fallback:
+  - 1.2.4.8
+metrics: 0.0.0.0:3002
+
+# 劫持域名使用的内网网段
+# 被劫持的域名越多，需要占用的 ip 资源越多
+# 可以调整该设置，增大 ip 池
+network:
+  - 10.85.0.1/16
+  - 10.86.0.1/16
+
+# 代理，只支持 socks5
+proxy:
+  - name: v2ray_hk
+    values:
+      - socks5://127.0.0.1:1082?weight=1
+      - socks5://127.0.0.1:1083?weight=2
+  - name: v2ray_jp
+    values:
+      - socks5://127.0.0.1:1084?weight=1
+      - socks5://127.0.0.1:1085?weight=2
+
+# hosts
+# optional
+hosts: |
+  # 支持别名, `#` 为注释，支持行/行尾
+  # target  hostname
+  192.168.1.20                  myapp.com      # 我的app
+  cdn.myapp.com.a.bdydns.com.   cdn.myapp.com  # 我的app CDN
+
+rules:
+  # 静态路由
+  - type: route
+    target: v2ray_hk
+    values:
+      - 149.154.160.0/20
+      - 149.154.167.0/24
+      - 149.154.164.0/22
+      - 109.239.140.0/24
+      - 91.108.56.0/22
+      - 91.108.4.0/22
+      - 91.108.8.0/22
+
+  # 域名匹配, glob 规则
+  - type: domain
+    target: v2ray_hk
+    values:
+      - "*.google.com"
+
+  # 域名解析，ip cidr 匹配
+  - type: dnsCidr
+    target: v2ray_hk
+    values:
+      - 39.156.69.79/32
+      - 220.181.38.148/32
+      - 182.61.200.6/24
+
+  # TODO
+  # 域名解析，ip cidr 地域匹配, 基于 geoip https://dev.maxmind.com/geoip/geoip2/geolite2
+  # 需要事先准备好 geoip 数据库
+  - type: dnsCidrArea
+    target: v2ray_hk
+    values:
+      - hk
+      - us
