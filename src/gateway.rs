@@ -1,5 +1,5 @@
 use std::{
-    process::Command,
+    process::{self, Command},
     sync::{Arc, Once},
     time::Instant,
 };
@@ -72,7 +72,13 @@ impl Gateway {
             config.name(format!("utun{}", self.id + 5));
         }
 
-        let dev = tun::create_as_async(&config).expect("create tun failed");
+        let dev = match tun::create_as_async(&config) {
+            Ok(dev) => dev,
+            Err(e) => {
+                error!("create tun failed, err: {:?}", e);
+                process::exit(1);
+            }
+        };
         debug!("setup tun id {}", self.id);
 
         #[cfg(target_os = "macos")]

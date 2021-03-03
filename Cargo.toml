@@ -29,4 +29,5 @@ trust-dns-resolver = "0.20.0"
 opt-level = 'z'
 lto = true
 codegen-units = 1
+code-model = 'tiny'
 panic = 'abort'
