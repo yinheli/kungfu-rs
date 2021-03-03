@@ -225,17 +225,3 @@ impl Gateway {
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use ipnet::Ipv4Net;
-
-    #[test]
-    fn test_ipv4() {
-        let net: Ipv4Net = "10.86.0.1/16".parse().unwrap();
-        println!("{}/{}", net.network(), net.prefix_len());
-        // println!("{}", net.);
-        // let net = format!("{}", net);
-        // println!("{}", net);
-    }
-}
