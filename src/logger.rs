@@ -19,6 +19,6 @@ pub fn init(matches: &clap::ArgMatches) {
                 record.args()
             )
         })
-        .filter_level(level)
+        .filter_module("kungfu", level)
         .init();
 }

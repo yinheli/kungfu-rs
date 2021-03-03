@@ -1,3 +1,9 @@
+use std::{
+    borrow::Borrow,
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
+
 extern crate serde_derive;
 
 #[macro_use]
@@ -77,7 +83,7 @@ fn serve(matches: &clap::ArgMatches) {
     //     .build()
     //     .expect("runtime build failed");
 
-    let mut rt = tokio::runtime::Builder::new()
+    let rt = tokio::runtime::Builder::new()
         .threaded_scheduler()
         .enable_all()
         .max_threads(cpu * 8)
@@ -87,9 +93,19 @@ fn serve(matches: &clap::ArgMatches) {
         .build()
         .expect("tokio build failed");
 
-    rt.block_on(async move {
+    // let mut rt = Box::new(rt);
+    // let dns_runtime = &rt;
+
+    // let rt = Arc::new(Mutex::new(rt));
+    // let dns_runtime = rt.clone();
+    // let runtime = rt.clone();
+    // let mut runtime = runtime.lock().unwrap();
+
+    let rt = Arc::new(rt);
+    let runtime = rt.clone();
+    rt.clone().handle().block_on(async move {
         let gateway = gateway::serve(setting.clone());
-        let dns = dns::serve(setting.clone());
+        let dns = dns::serve(setting.clone(), runtime.deref());
         tokio::join!(gateway, dns);
-    })
+    });
 }
