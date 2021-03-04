@@ -1,5 +1,5 @@
 use chrono::Local;
-use env_logger;
+use env_logger::{self, Target};
 use std::io::Write;
 
 pub fn init(matches: &clap::ArgMatches) {
@@ -19,6 +19,7 @@ pub fn init(matches: &clap::ArgMatches) {
                 record.args()
             )
         })
+        .target(Target::Stdout)
         .filter_module("kungfu", level)
         .init();
 }

@@ -64,12 +64,16 @@ impl Gateway {
 
         #[cfg(target_os = "linux")]
         {
-            config.name(format!("kungfu_{}", self.id));
+            let name = format!("kungfu_{}", self.id);
+            debug!("setup tun {}", &name);
+            config.name(name);
         }
 
         #[cfg(target_os = "macos")]
         {
-            config.name(format!("utun{}", self.id + 5));
+            let name = format!("utun{}", self.id + 5);
+            debug!("setup tun {}", &name);
+            config.name(name);
         }
 
         let dev = match tun::create_as_async(&config) {
@@ -79,7 +83,6 @@ impl Gateway {
                 process::exit(1);
             }
         };
-        debug!("setup tun id {}", self.id);
 
         #[cfg(target_os = "macos")]
         {

@@ -1,13 +1,9 @@
-use std::{
-    borrow::Borrow,
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
-
 extern crate serde_derive;
 
 #[macro_use]
 extern crate log;
+
+use std::sync::Arc;
 
 mod dns;
 mod gateway;
@@ -26,8 +22,9 @@ fn main() {
             clap::Arg::with_name("config")
                 .long("config")
                 .short("c")
-                .value_name("FILE")
+                .value_name("config_file")
                 .takes_value(true)
+                .default_value("config.yml")
                 .help("configuration file"),
         )
         .arg(
@@ -105,7 +102,7 @@ fn serve(matches: &clap::ArgMatches) {
     let runtime = rt.clone();
     rt.clone().handle().block_on(async move {
         let gateway = gateway::serve(setting.clone());
-        let dns = dns::serve(setting.clone(), runtime.deref());
+        let dns = dns::serve(setting.clone(), &runtime);
         tokio::join!(gateway, dns);
     });
 }
