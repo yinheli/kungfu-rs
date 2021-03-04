@@ -13,7 +13,7 @@ use crate::setting::Setting;
 pub async fn serve(setting: Arc<Setting>, runtime: &Runtime) {
     let handler = DnsServerHandler { setting };
     let mut server = ServerFuture::new(handler);
-    let socket = match UdpSocket::bind("0.0.0.0:5353").await {
+    let socket = match UdpSocket::bind("0.0.0.0:53").await {
         Ok(v) => v,
         Err(e) => {
             error!("listen dns server, err: {:?}", e);
