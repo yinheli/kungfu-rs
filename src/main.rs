@@ -102,7 +102,7 @@ fn serve(matches: &clap::ArgMatches) {
     let runtime = rt.clone();
     rt.clone().handle().block_on(async move {
         let gateway = gateway::serve(setting.clone());
-        let dns = dns::serve(setting.clone(), &runtime);
+        let dns = dns::serve(setting.clone(), runtime);
         tokio::join!(gateway, dns);
     });
 }
