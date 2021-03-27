@@ -11,7 +11,10 @@ use std::{
 };
 
 use futures::Future;
-use tokio::{net::UdpSocket, runtime::Runtime};
+use tokio::{
+    net::UdpSocket,
+    runtime::{Handle, Runtime},
+};
 use trust_dns_client::{
     client::{AsyncClient, Client, SyncClient},
     op::{Header, OpCode},
@@ -21,7 +24,9 @@ use trust_dns_client::{
 use trust_dns_proto::op::header::MessageType;
 use trust_dns_resolver::{
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
-    IntoName, TokioAsyncResolver,
+    error::ResolveError,
+    name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
+    AsyncResolver, IntoName, TokioAsyncResolver,
 };
 use trust_dns_server::{
     authority::{MessageRequest, MessageResponseBuilder},
@@ -31,11 +36,27 @@ use trust_dns_server::{
 
 use crate::setting::Setting;
 
+type Resolver = AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>;
+
 pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
-    let handler = DnsServer {
+    let mut resolvers = vec![];
+    for dns_host in &setting.clone().dns_upstream {
+        let resolver = create_resolver(dns_host, runtime.clone()).await.unwrap();
+        resolvers.push(resolver);
+    }
+    let mut resolver_fallbacks = vec![];
+    for dns_host in &setting.clone().dns_fallback {
+        let resolver = create_resolver(dns_host, runtime.clone()).await.unwrap();
+        resolver_fallbacks.push(resolver);
+    }
+
+    let opt = DnsServerOpt {
         setting,
-        runtime: runtime.clone(),
+        resolvers: Arc::new(resolvers),
+        resolver_fallbacks: Arc::new(resolver_fallbacks),
     };
+
+    let handler = DnsServer::new(Arc::new(opt));
     let mut server = ServerFuture::new(handler);
     let socket = match UdpSocket::bind("0.0.0.0:53").await {
         Ok(v) => v,
@@ -44,15 +65,37 @@ pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
             process::exit(1);
         }
     };
-    let _rt = runtime.clone();
     server.register_socket(socket, &runtime);
     debug!("dns server start");
     server.block_until_done().await.unwrap();
 }
 
-struct DnsServer {
+async fn create_resolver(host: &str, runtime: Arc<Runtime>) -> Result<Resolver, ResolveError> {
+    let handle = runtime.handle().to_owned();
+    let addr = host
+        .parse()
+        .map_err(|e| format!("invalid dns host: {}, err: {:?}", host, e))?;
+    let name_server_group = NameServerConfigGroup::from_ips_clear(&[IpAddr::V4(addr)], 53);
+    let config = ResolverConfig::from_parts(None, vec![], name_server_group);
+    let mut options = ResolverOpts::default();
+    options.cache_size = 1024;
+    TokioAsyncResolver::new(config, options, handle).await
+}
+
+struct DnsServerOpt {
     setting: Arc<Setting>,
-    runtime: Arc<Runtime>,
+    resolvers: Arc<Vec<Resolver>>,
+    resolver_fallbacks: Arc<Vec<Resolver>>,
+}
+
+struct DnsServer {
+    opt: Arc<DnsServerOpt>,
+}
+
+impl DnsServer {
+    fn new(opt: Arc<DnsServerOpt>) -> Self {
+        DnsServer { opt }
+    }
 }
 
 impl RequestHandler for DnsServer {
@@ -63,6 +106,8 @@ impl RequestHandler for DnsServer {
         request: Request,
         response_handle: R,
     ) -> Self::ResponseFuture {
+        let handler = QueryHandler::new(self.opt.clone());
+
         let request_message = request.message;
         if request_message.message_type() == MessageType::Query {
             if request_message.op_code() == OpCode::Query {
@@ -70,46 +115,33 @@ impl RequestHandler for DnsServer {
                 if queries.len() > 0 {
                     let query = &queries[0];
                     if query.query_type() == RecordType::A {
-                        let handler = QueryHandler {
-                            setting: self.setting.clone(),
-                            runtime: self.runtime.clone(),
-                        };
                         return Box::pin(handler.query_upstream(request_message, response_handle));
                     }
                 }
             }
         }
-        let handler = QueryHandler {
-            setting: self.setting.clone(),
-            runtime: self.runtime.clone(),
-        };
         Box::pin(handler.query_upstream(request_message, response_handle))
     }
 }
 
 struct QueryHandler {
-    setting: Arc<Setting>,
-    runtime: Arc<Runtime>,
+    opt: Arc<DnsServerOpt>,
+}
+
+impl QueryHandler {
+    fn new(opt: Arc<DnsServerOpt>) -> Self {
+        QueryHandler { opt }
+    }
 }
 
 impl QueryHandler {
     async fn query_upstream<R: ResponseHandler>(self, request: MessageRequest, response_handle: R) {
-        let name_server_group =
-            NameServerConfigGroup::from_ips_clear(&[IpAddr::V4(Ipv4Addr::new(1, 2, 4, 8))], 53);
-        // let options = config.options.unwrap_or_default();
-        let config = ResolverConfig::from_parts(None, vec![], name_server_group);
-
-        let runtime = self.runtime.clone().handle().to_owned();
-        let resolver = TokioAsyncResolver::new(config, Default::default(), runtime)
-            .await
-            .unwrap();
-
         let queries = request.queries();
         let query = &queries[0];
         let record_type = query.query_type();
         let name = query.name();
 
-        let res = resolver
+        let res = self.opt.clone().resolvers.clone()[0]
             .lookup(name, record_type, Default::default())
             .await
             .unwrap();
@@ -146,27 +178,5 @@ impl QueryHandler {
         let additionals = Box::new([].iter()) as Box<dyn Iterator<Item = &Record> + Send>;
         let response = builder.build(header, answers, name_servers, soa, additionals);
         let _ = response_handle.send_response(response);
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_1() {
-        // let a: dyn IntoIterator<Item = Option> = Box::new(None).into_iter();
-        // let b: dyn IntoIterator<Item = Option, IntoIter = > = Box::new(None.into_iter());
-        // assert_eq!(a, b);
-
-        // let v = vec![Box::new(1)];
-        // let a = v.iter();
-        // for x in a {
-        //     println!("x:{}", x)
-        // }
-
-        // let b = v.into_iter();
-
-        // for x in b {
-        //     println!("x:{}", x)
-        // }
     }
 }

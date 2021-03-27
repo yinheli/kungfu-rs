@@ -99,10 +99,14 @@ fn serve(matches: &clap::ArgMatches) {
     // let mut runtime = runtime.lock().unwrap();
 
     let rt = Arc::new(rt);
-    let runtime = rt.clone();
-    rt.clone().handle().block_on(async move {
+    let bootstrap_runtime = rt.clone();
+    let bootstrap = bootstrap_runtime.handle();
+
+    let dns_runtime = rt.clone();
+
+    bootstrap.block_on(async move {
         let gateway = gateway::serve(setting.clone());
-        let dns = dns::serve(setting.clone(), runtime);
+        let dns = dns::serve(setting.clone(), dns_runtime);
         tokio::join!(gateway, dns);
     });
 }
