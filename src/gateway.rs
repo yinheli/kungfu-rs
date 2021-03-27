@@ -19,7 +19,7 @@ use tun::{AsyncDevice, Configuration, TunPacket, TunPacketCodec};
 
 use crate::setting::{RuleType, Setting};
 
-pub async fn serve(setting: Arc<Setting>) {
+pub async fn serve(setting: Arc<Setting>) -> Result<(), String> {
     let mut gateways = vec![];
     let mut id = 0;
     for network in setting.network.iter() {
@@ -34,6 +34,8 @@ pub async fn serve(setting: Arc<Setting>) {
     }
 
     join_all(handlers).await;
+
+    Ok(())
 }
 
 struct Gateway {

@@ -107,6 +107,9 @@ fn serve(matches: &clap::ArgMatches) {
     bootstrap.block_on(async move {
         let gateway = gateway::serve(setting.clone());
         let dns = dns::serve(setting.clone(), dns_runtime);
-        tokio::join!(gateway, dns);
+        let result = tokio::try_join!(gateway, dns);
+        if let Err(e) = result {
+            println!("{}", e);
+        }
     });
 }

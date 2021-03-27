@@ -1,4 +1,4 @@
-use std::{net::IpAddr, pin::Pin, process, sync::Arc};
+use std::{net::IpAddr, pin::Pin, sync::Arc};
 
 use futures::Future;
 use tokio::{net::UdpSocket, runtime::Runtime};
@@ -9,7 +9,6 @@ use trust_dns_client::{
 use trust_dns_proto::op::header::MessageType;
 use trust_dns_resolver::{
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
-    error::ResolveError,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
     AsyncResolver, TokioAsyncResolver,
 };
@@ -21,55 +20,50 @@ use trust_dns_server::{
 
 use crate::setting::Setting;
 
-pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
+pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) -> Result<(), String> {
     let dns_upstream = &setting.clone().dns_upstream;
-    let resolver = create_resolver(dns_upstream, runtime.clone())
-        .await
-        .unwrap();
+    let resolver = create_resolver(dns_upstream, runtime.clone()).await?;
 
     let dns_fallback = &setting.clone().dns_fallback;
-    let resolver_fallback = create_resolver(dns_fallback, runtime.clone())
-        .await
-        .unwrap();
+    let resolver_fallback = create_resolver(dns_fallback, runtime.clone()).await?;
 
     let opt = DnsServerOpt {
-        setting,
+        setting: setting.clone(),
         resolver: Arc::new(resolver),
         resolver_fallback: Arc::new(resolver_fallback),
     };
 
     let handler = DnsServer::new(Arc::new(opt));
+
     let mut server = ServerFuture::new(handler);
-    let socket = match UdpSocket::bind("0.0.0.0:53").await {
-        Ok(v) => v,
-        Err(e) => {
-            error!("listen dns server, err: {:?}", e);
-            process::exit(1);
-        }
-    };
+    let server_addr = format!("0.0.0.0:{}", setting.dns_port);
+    let socket = UdpSocket::bind(server_addr)
+        .await
+        .map_err(|e| format!("listen dns server, err: {:?}", e))?;
     server.register_socket(socket, &runtime);
     debug!("dns server start");
-    server.block_until_done().await.unwrap();
+    Ok(server
+        .block_until_done()
+        .await
+        .map_err(|e| format!("{}", e))?)
 }
 
-async fn create_resolver(
-    hosts: &Vec<String>,
-    runtime: Arc<Runtime>,
-) -> Result<Resolver, ResolveError> {
+async fn create_resolver(hosts: &Vec<String>, runtime: Arc<Runtime>) -> Result<Resolver, String> {
     let handle = runtime.handle().to_owned();
-    let mut addrs = vec![];
+    let mut ips = vec![];
     for host in hosts {
-        let addr: IpAddr = host
+        let ip: IpAddr = host
             .parse()
             .map_err(|e| format!("invalid dns host: {}, err: {:?}", host, e))?;
-        addrs.push(addr);
+        ips.push(ip);
     }
-    let name_server_group = NameServerConfigGroup::from_ips_clear(&addrs, 53);
+    let name_server_group = NameServerConfigGroup::from_ips_clear(&ips, 53);
     let config = ResolverConfig::from_parts(None, vec![], name_server_group);
     let mut options = ResolverOpts::default();
     options.cache_size = 1024;
-    options.num_concurrent_reqs = 2;
-    TokioAsyncResolver::new(config, options, handle).await
+    TokioAsyncResolver::new(config, options, handle)
+        .await
+        .map_err(|e| format!("create resolver failed: {:?}", e))
 }
 
 type Resolver = AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>;
