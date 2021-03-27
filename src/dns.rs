@@ -21,8 +21,6 @@ use trust_dns_server::{
 
 use crate::setting::Setting;
 
-type Resolver = AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>;
-
 pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
     let dns_upstream = &setting.clone().dns_upstream;
     let resolver = create_resolver(dns_upstream, runtime.clone())
@@ -73,6 +71,8 @@ async fn create_resolver(
     options.num_concurrent_reqs = 2;
     TokioAsyncResolver::new(config, options, handle).await
 }
+
+type Resolver = AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>;
 
 struct DnsServerOpt {
     setting: Arc<Setting>,
