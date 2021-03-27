@@ -1,32 +1,17 @@
-use std::{
-    borrow::Borrow,
-    convert::TryInto,
-    iter,
-    net::{IpAddr, Ipv4Addr, ToSocketAddrs},
-    ops::Deref,
-    pin::Pin,
-    process,
-    slice::Iter,
-    sync::Arc,
-};
+use std::{net::IpAddr, pin::Pin, process, sync::Arc};
 
 use futures::Future;
-use tokio::{
-    net::UdpSocket,
-    runtime::{Handle, Runtime},
-};
+use tokio::{net::UdpSocket, runtime::Runtime};
 use trust_dns_client::{
-    client::{AsyncClient, Client, SyncClient},
     op::{Header, OpCode},
     rr::{Record, RecordType},
-    udp::{UdpClientConnection, UdpClientStream},
 };
 use trust_dns_proto::op::header::MessageType;
 use trust_dns_resolver::{
     config::{NameServerConfigGroup, ResolverConfig, ResolverOpts},
     error::ResolveError,
     name_server::{GenericConnection, GenericConnectionProvider, TokioRuntime},
-    AsyncResolver, IntoName, TokioAsyncResolver,
+    AsyncResolver, TokioAsyncResolver,
 };
 use trust_dns_server::{
     authority::{MessageRequest, MessageResponseBuilder},
@@ -39,21 +24,20 @@ use crate::setting::Setting;
 type Resolver = AsyncResolver<GenericConnection, GenericConnectionProvider<TokioRuntime>>;
 
 pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
-    let mut resolvers = vec![];
-    for dns_host in &setting.clone().dns_upstream {
-        let resolver = create_resolver(dns_host, runtime.clone()).await.unwrap();
-        resolvers.push(resolver);
-    }
-    let mut resolver_fallbacks = vec![];
-    for dns_host in &setting.clone().dns_fallback {
-        let resolver = create_resolver(dns_host, runtime.clone()).await.unwrap();
-        resolver_fallbacks.push(resolver);
-    }
+    let dns_upstream = &setting.clone().dns_upstream;
+    let resolver = create_resolver(dns_upstream, runtime.clone())
+        .await
+        .unwrap();
+
+    let dns_fallback = &setting.clone().dns_fallback;
+    let resolver_fallback = create_resolver(dns_fallback, runtime.clone())
+        .await
+        .unwrap();
 
     let opt = DnsServerOpt {
         setting,
-        resolvers: Arc::new(resolvers),
-        resolver_fallbacks: Arc::new(resolver_fallbacks),
+        resolver: Arc::new(resolver),
+        resolver_fallback: Arc::new(resolver_fallback),
     };
 
     let handler = DnsServer::new(Arc::new(opt));
@@ -70,22 +54,30 @@ pub async fn serve(setting: Arc<Setting>, runtime: Arc<Runtime>) {
     server.block_until_done().await.unwrap();
 }
 
-async fn create_resolver(host: &str, runtime: Arc<Runtime>) -> Result<Resolver, ResolveError> {
+async fn create_resolver(
+    hosts: &Vec<String>,
+    runtime: Arc<Runtime>,
+) -> Result<Resolver, ResolveError> {
     let handle = runtime.handle().to_owned();
-    let addr = host
-        .parse()
-        .map_err(|e| format!("invalid dns host: {}, err: {:?}", host, e))?;
-    let name_server_group = NameServerConfigGroup::from_ips_clear(&[IpAddr::V4(addr)], 53);
+    let mut addrs = vec![];
+    for host in hosts {
+        let addr: IpAddr = host
+            .parse()
+            .map_err(|e| format!("invalid dns host: {}, err: {:?}", host, e))?;
+        addrs.push(addr);
+    }
+    let name_server_group = NameServerConfigGroup::from_ips_clear(&addrs, 53);
     let config = ResolverConfig::from_parts(None, vec![], name_server_group);
     let mut options = ResolverOpts::default();
     options.cache_size = 1024;
+    options.num_concurrent_reqs = 2;
     TokioAsyncResolver::new(config, options, handle).await
 }
 
 struct DnsServerOpt {
     setting: Arc<Setting>,
-    resolvers: Arc<Vec<Resolver>>,
-    resolver_fallbacks: Arc<Vec<Resolver>>,
+    resolver: Arc<Resolver>,
+    resolver_fallback: Arc<Resolver>,
 }
 
 struct DnsServer {
@@ -141,7 +133,11 @@ impl QueryHandler {
         let record_type = query.query_type();
         let name = query.name();
 
-        let res = self.opt.clone().resolvers.clone()[0]
+        let res = self
+            .opt
+            .clone()
+            .resolver
+            .clone()
             .lookup(name, record_type, Default::default())
             .await
             .unwrap();
