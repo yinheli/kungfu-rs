@@ -1,10 +1,10 @@
-use std::{net::IpAddr, pin::Pin, sync::Arc};
+use std::{borrow::BorrowMut, net::IpAddr, pin::Pin, sync::Arc};
 
 use futures::Future;
 use tokio::{net::UdpSocket, runtime::Runtime};
 use trust_dns_client::{
     op::{Header, OpCode},
-    rr::{Record, RecordType},
+    rr::{LowerName, Record, RecordType},
 };
 use trust_dns_proto::op::header::MessageType;
 use trust_dns_resolver::{
@@ -101,12 +101,27 @@ impl RequestHandler for DnsServer {
                 if queries.len() > 0 {
                     let query = &queries[0];
                     if query.query_type() == RecordType::A {
+                        let name = query.name();
+                        self.apply_rule(name);
                         return Box::pin(handler.query_upstream(request_message, response_handle));
                     }
                 }
             }
         }
         Box::pin(handler.query_upstream(request_message, response_handle))
+    }
+}
+
+impl DnsServer {
+    fn network_ip(&self, host: &str) -> IpAddr {
+        let networks = &self.opt.clone().setting.clone().network;
+
+        todo!();
+    }
+
+    fn apply_rule(&self, name: &LowerName) {
+        let rules = &self.opt.clone().setting.clone().rules;
+        let ip = self.network_ip("");
     }
 }
 
@@ -168,5 +183,48 @@ impl QueryHandler {
         let additionals = Box::new([].iter()) as Box<dyn Iterator<Item = &Record> + Send>;
         let response = builder.build(header, answers, name_servers, soa, additionals);
         let _ = response_handle.send_response(response);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    #[test]
+    fn test_hash() {
+        let mut hasher = DefaultHasher::new();
+        let s = "a";
+        s.hash(&mut hasher);
+        println!("Hash is {:x}!", hasher.finish());
+    }
+
+    use std::str::FromStr;
+    use trust_dns_client::client::{Client, SyncClient};
+    use trust_dns_client::rr::{DNSClass, Name, RecordType};
+    use trust_dns_client::udp::UdpClientConnection;
+
+    #[test]
+    fn test_client() {
+        let address = "192.168.2.100:123".parse().unwrap();
+        let conn = UdpClientConnection::new(address).unwrap();
+        let client = SyncClient::new(conn);
+
+        let name = Name::from_str("www.example.com.").unwrap();
+        let response = client.query(&name, DNSClass::IN, RecordType::A);
+        match response {
+            Ok(resp) => {
+                println!("Result: {:?}", resp)
+            }
+            Err(err) => match err.kind() {
+                trust_dns_client::error::ClientErrorKind::Io(e) => {
+                    println!("{:?}", e.raw_os_error());
+                }
+                _ => {
+                    println!("err: {:?}", err);
+                    println!("err kind: {:?}", err.kind());
+                }
+            },
+        }
     }
 }

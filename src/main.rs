@@ -61,12 +61,13 @@ fn serve(matches: &clap::ArgMatches) {
     let setting = match setting::Setting::load(config_file) {
         Ok(s) => s,
         Err(e) => {
-            panic!(e)
+            error!("{:?}", e);
+            std::process::exit(1);
         }
     };
 
     if matches.is_present("test") {
-        todo!("todo test config");
+        return;
     }
 
     let cpu = num_cpus::get();
@@ -89,14 +90,6 @@ fn serve(matches: &clap::ArgMatches) {
         .thread_stack_size(1024 * 512)
         .build()
         .expect("tokio build failed");
-
-    // let mut rt = Box::new(rt);
-    // let dns_runtime = &rt;
-
-    // let rt = Arc::new(Mutex::new(rt));
-    // let dns_runtime = rt.clone();
-    // let runtime = rt.clone();
-    // let mut runtime = runtime.lock().unwrap();
 
     let rt = Arc::new(rt);
     let bootstrap_runtime = rt.clone();

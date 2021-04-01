@@ -69,7 +69,13 @@ impl Setting {
         }
 
         match c.try_into() {
-            Ok(setting) => Ok(Arc::new(setting)),
+            Ok(setting) => {
+                let s: &Setting = &setting;
+                match s.validate() {
+                    Ok(_) => Ok(Arc::new(setting)),
+                    Err(e) => Err(ConfigError::Message(e)),
+                }
+            }
             Err(e) => Err(e),
         }
     }
@@ -79,8 +85,12 @@ impl Setting {
         c.set_default("dns_ttl", 10)?;
         c.set_default("dns_upstream", vec!["1.2.4.8", "114.114.114.114"])?;
         c.set_default("metrics", "0.0.0.0:3001")?;
-        c.set_default("network", vec!["10.88.0.1/16"])?;
+        c.set_default("network", vec!["10.85.0.1/16", "10.86.0.1/16"])?;
         c.set_default("hosts", "")?;
         Ok(())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        todo!()
     }
 }
